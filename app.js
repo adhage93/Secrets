@@ -28,6 +28,7 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 mongoose.connect("mongodb://localhost:27017/userDB", { useNewUrlParser: true });
+mongoose.set("useCreateIndex", true);
 
 const userSchema = new mongoose.Schema({
     email: String,
@@ -38,7 +39,7 @@ userSchema.plugin(passportLocalMongoose);
 
 const User = new mongoose.model("User", userSchema);
 
-passport.use(User.createStratergy());
+passport.use(User.createStrategy());
 
 passport.serializeUser(User.serializeUser());
 passport.deserializeUser(User.deserializeUser());
@@ -54,34 +55,24 @@ app.route("/login")
     })
     .post((req, res) => {
 
-        const queryUser = {
-            email: req.body.username,
-        };
+        const user = new User({
+            username: req.body.username,
+            password: req.body.password
+        });
 
-        User.findOne(queryUser, (err, foundUser) => {
-            if (!err) {
-                if (foundUser) {
-                    console.log("User found successfully!");
-                    bcrypt.compare(md5(req.body.password), foundUser.password, (err, result) => {
-
-                        if (result === true) {
-                            console.log("Logged in successfully");
-                            res.render("secrets");
-                        }
-                        else {
-                            console.log("Wrong password!!!");
-                        }
-                    });
-
-                }
-                else {
-                    console.log("Wrong Username!!!");
-                }
+        req.login(user, (err) => {
+            if(err)
+            {
+                console.log("Incorrect Creds!");
             }
-            else {
-                console.log("Error finding in user: " + err);
+            else
+            {
+                passport.authenticate("local")(req, res, () => {
+                    res.redirect("/secrets");
+                });
             }
         });
+        
     });
 
 app.route("/register")
@@ -90,29 +81,38 @@ app.route("/register")
     })
     .post((req, res) => {
 
-        bcrypt.hash(md5(req.body.password), saltRounds, (err, hash) => {
-            if (!err) {
-                const newUser = new User({
-                    email: req.body.username,
-                    password: hash
-                });
-
-                newUser.save((err) => {
-                    if (!err) {
-                        console.log("User registerd successfully!");
-                        res.render("secrets");
-                    }
-                    else {
-                        console.log("Error registering user: " + err);
-                    }
+        User.register({username: req.body.username}, req.body.password, (err, user) => {
+            if(err) 
+            {
+                console.log(err);
+                res.redirect("/register");
+            } 
+            else
+            {
+                passport.authenticate("local")(req, res, () => {
+                    res.redirect("/secrets");
                 });
             }
-            else {
-                console.log("err in hashing: ", err);
-            }
-
         });
+
     });
+
+app.route("/secrets")
+    .get((req,res) => {
+        if(req.isAuthenticated())
+        {
+            res.render("secrets");
+        }
+        else
+        {
+            res.render("login");
+        }
+    });
+
+app.route("/logout").get((req,res) => {
+    req.logOut();
+    res.redirect('/');
+});
 
 app.listen(3000, () => {
     console.log('Server Started on port 3000...');
